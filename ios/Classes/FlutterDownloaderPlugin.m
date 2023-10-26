@@ -8,6 +8,7 @@
 #define STATUS_FAILED 4
 #define STATUS_CANCELED 5
 #define STATUS_PAUSED 6
+#define STATUS_BADREQUEST 7
 
 #define KEY_URL @"url"
 #define KEY_SAVED_DIR @"saved_dir"
@@ -1153,6 +1154,17 @@ static NSSearchPathDirectory const kDefaultSearchPathDirectory = NSDocumentDirec
             }];
         }
     }
+
+    bool badRequest = httpStatusCode == 400;
+    if (badRequest) {
+        NSString *taskId = [self identifierForTask:downloadTask ofSession:session];
+        [_runningTaskById removeObjectForKey:taskId];
+        [self sendUpdateProgressForTaskId:taskId inStatus:@(STATUS_BADREQUEST) andProgress:@(-1)];
+        __typeof__(self) __weak weakSelf = self;
+        [self executeInDatabaseQueueForTask:^{
+            [weakSelf updateTask:taskId status:STATUS_BADREQUEST progress:-1];
+        }];
+    }
 }
 
 -(void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
@@ -1187,6 +1199,17 @@ static NSSearchPathDirectory const kDefaultSearchPathDirectory = NSDocumentDirec
                 [weakSelf updateTask:taskId status:status progress:-1];
             }];
         }
+    }
+
+    bool badRequest = httpStatusCode == 400;
+    if (badRequest) {
+        NSString *taskId = [self identifierForTask:task ofSession:session];
+        [_runningTaskById removeObjectForKey:taskId];
+        [self sendUpdateProgressForTaskId:taskId inStatus:@(STATUS_BADREQUEST) andProgress:@(-1)];
+        __typeof__(self) __weak weakSelf = self;
+        [self executeInDatabaseQueueForTask:^{
+            [weakSelf updateTask:taskId status:STATUS_BADREQUEST progress:-1];
+        }];
     }
 }
 

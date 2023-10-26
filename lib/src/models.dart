@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 /// Defines a set of possible states which a [DownloadTask] can be in.
 @pragma('vm:entry-point')
 enum DownloadTaskStatus {
@@ -15,6 +17,9 @@ enum DownloadTaskStatus {
 
   /// The task has failed.
   failed,
+
+  /// The task has failed because file has bad request.
+  badrequest,
 
   /// The task was canceled and cannot be resumed.
   canceled,
@@ -39,6 +44,8 @@ enum DownloadTaskStatus {
         return DownloadTaskStatus.canceled;
       case 6:
         return DownloadTaskStatus.paused;
+      case 7:
+        return DownloadTaskStatus.badrequest;
       default:
         throw ArgumentError('Invalid value: $value');
     }
