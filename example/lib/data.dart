@@ -1,6 +1,10 @@
 class DownloadItems {
   static const documents = [
     DownloadItem(
+      name: 'Bad req test',
+      url: 'https://httpstat.us/400',
+    ),
+    DownloadItem(
       name: 'Android Programming Cookbook',
       url:
           'http://enos.itcollege.ee/~jpoial/allalaadimised/reading/Android-Programming-Cookbook.pdf',

@@ -20,6 +20,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.work.Data
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import io.flutter.FlutterInjector
@@ -30,10 +31,12 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.view.FlutterCallbackInformation
 import org.json.JSONException
 import org.json.JSONObject
+import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.InputStreamReader
 import java.io.OutputStream
 import java.io.UnsupportedEncodingException
 import java.net.HttpURLConnection
@@ -139,7 +142,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
         val filename: String? = inputData.getString(ARG_FILE_NAME)
         val task = taskDao?.loadTask(id.toString())
         if (task != null && task.status == DownloadStatus.ENQUEUED) {
-            updateNotification(context, filename ?: url, DownloadStatus.CANCELED, -1, null, true, null)
+            updateNotification(context, filename ?: url, DownloadStatus.CANCELED, -1, null, true)
             taskDao?.updateTask(id.toString(), DownloadStatus.CANCELED, lastProgress)
         }
     }
@@ -192,7 +195,6 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
             task.progress,
             null,
             false,
-            null,
         )
         taskDao?.updateTask(id.toString(), DownloadStatus.RUNNING, task.progress)
 
@@ -210,7 +212,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
             taskDao = null
             Result.success()
         } catch (e: Exception) {
-            updateNotification(applicationContext, filename ?: url, DownloadStatus.FAILED, -1, null, true, null)
+            updateNotification(applicationContext, filename ?: url, DownloadStatus.FAILED, -1, null, true)
             taskDao?.updateTask(id.toString(), DownloadStatus.FAILED, lastProgress)
             e.printStackTrace()
             dbHelper = null
@@ -249,6 +251,32 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
         conn.setRequestProperty("Range", "bytes=$downloadedBytes-")
         conn.doInput = true
         return downloadedBytes
+    }
+
+    private fun convertStreamToString(input: InputStream): String {
+        log("convert stream to string input $input")
+
+        val reader: BufferedReader = BufferedReader(InputStreamReader(input));
+        val sb: StringBuilder = StringBuilder();
+        log("convert stream to string start")
+        var line: String? = null;
+        try {
+            line = reader.readLine()
+            log("convert stream to string line $line")
+            while (line != null) {
+                sb.append("$line\n");
+            }
+        } catch (e: IOException) {
+            log("convert stream to string e $e")
+            e.printStackTrace();
+        } finally {
+            try {
+                input.close();
+            } catch (e: IOException) {
+                e.printStackTrace();
+            }
+        }
+        return sb.toString();
     }
 
     private fun downloadFile(
@@ -339,8 +367,8 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
                 break
             }
             httpConn!!.connect()
-            val body: String = httpConn.responseMessage.toString()
-            log("body = $body")
+//            val body: String = convertStreamToString(httpConn.inputStream)
+//            log("batia = $body")
             val contentType: String
             if ((responseCode == HttpURLConnection.HTTP_OK || isResume && responseCode == HttpURLConnection.HTTP_PARTIAL) && !isStopped) {
                 contentType = httpConn.contentType
@@ -422,7 +450,6 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
                             progress,
                             null,
                             false,
-                            null,
                         )
                     }
                 }
@@ -464,23 +491,23 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
                     }
                 }
                 taskDao!!.updateTask(id.toString(), status, progress)
-                updateNotification(context, actualFilename, status, progress, pendingIntent, true, null)
+                updateNotification(context, actualFilename, status, progress, pendingIntent, true)
                 log(if (isStopped) "Download canceled" else "File downloaded")
             } else if (responseCode == 400) {
                 taskDao!!.updateTask(id.toString(), DownloadStatus.BADREQUEST, lastProgress)
-                updateNotification(context, actualFilename ?: fileURL, DownloadStatus.BADREQUEST, -1, null, true, "BAD_REQUEST")
+                updateNotification(context, actualFilename ?: fileURL, DownloadStatus.BADREQUEST, -1, null, true)
                 log("Server replied HTTP code: $responseCode BADREQUEST")
             } else {
                 val loadedTask = taskDao!!.loadTask(id.toString())
                 val status =
                     if (isStopped) if (loadedTask!!.resumable) DownloadStatus.PAUSED else DownloadStatus.CANCELED else DownloadStatus.FAILED
                 taskDao!!.updateTask(id.toString(), status, lastProgress)
-                updateNotification(context, actualFilename ?: fileURL, status, -1, null, true, null)
+                updateNotification(context, actualFilename ?: fileURL, status, -1, null, true)
                 log(if (isStopped) "Download canceled" else "Server replied HTTP code: $responseCode")
             }
         } catch (e: IOException) {
             taskDao!!.updateTask(id.toString(), DownloadStatus.FAILED, lastProgress)
-            updateNotification(context, actualFilename ?: fileURL, DownloadStatus.FAILED, -1, null, true, null)
+            updateNotification(context, actualFilename ?: fileURL, DownloadStatus.FAILED, -1, null, true)
             e.printStackTrace()
         } finally {
             if (outputStream != null) {
@@ -633,7 +660,6 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
         progress: Int,
         intent: PendingIntent?,
         finalize: Boolean,
-        subTitle: String?,
     ) {
         sendUpdateProcessEvent(status, progress)
 
@@ -644,7 +670,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
                 .setContentIntent(intent)
                 .setOnlyAlertOnce(true)
                 .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
             when (status) {
                 DownloadStatus.RUNNING -> {
                     if (progress <= 0) {
@@ -684,12 +710,6 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
 
                 DownloadStatus.COMPLETE -> {
                     builder.setContentText(msgComplete).setProgress(0, 0, false)
-                    builder.setOngoing(false)
-                        .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                }
-                
-                DownloadStatus.BADREQUEST -> {
-                    builder.setContentText(subTitle).setProgress(0, 0, false)
                     builder.setOngoing(false)
                         .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 }

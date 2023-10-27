@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 /// Defines a set of possible states which a [DownloadTask] can be in.
 @pragma('vm:entry-point')
 enum DownloadTaskStatus {
